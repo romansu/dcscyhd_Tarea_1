@@ -9,15 +9,13 @@ output:
     theme: journal
 ---
 
-
-
 ```{r setup, message = FALSE, echo=FALSE}
 knitr::opts_chunk$set(echo = TRUE,include = TRUE, message = FALSE)
 ```
 
 **Carga de librerías a usar**   
 ```{r, include = TRUE}
-pacman::p_load(tidyverse, ggplot2, forcats, ggtext, readxl, naniar, sf, plotly, gganimate)
+pacman::p_load(tidyverse, ggplot2, forcats, ggtext, readxl, naniar, sf, plotly, gganimate, gifski, polArViz, geoAr)
 options(scipen = 999)
 ```
 
@@ -28,133 +26,67 @@ base_dptos_total <- read_excel("data/Salario-promedio-por-departamento.xlsx")
 mapa_dptos <- read_sf ("data/departamentos_arg.geojson")
 w_mean_dpto_priv_clae2 <- read.csv("data/w_mean_depto_total_clae2.csv")
 diccionario <- read.csv("data/diccionario_clae2.csv")
+provincias <- "data/provincia.json"
 ```
 
  Tarea 1: Los departamentos con mayores salarios, expresados en un mapa coroplético
  
- - Observamos que contiene la base mapas_dptos
- 
 ```{r echo=TRUE, eval=TRUE}
-head(mapa_dptos)
-```
+caba <- st_read(provincias) %>% 
+  filter(fna == "Ciudad Autónoma de Buenos Aires") %>% 
+  select(geometry) %>% 
+  mutate(provincia = "CABA")
 
-Transformamos al mapa en mercator
+caba <- st_transform(caba, 3857)
 
-```{r echo=TRUE, eval=TRUE}
+caba <- caba %>% 
+  mutate(link = NA,
+         codpcia = "02", #Le asigno un valor para futuros procesamientos
+         departamen = NA,
+         mujeres = NA,
+         varones = NA,
+         personas = NA,
+         hogares = NA, 
+         viv_part_h = NA,
+         viv_part = NA, 
+         codigo_departamento_indec = "2000") #Le asigno un valor para futuros procesamientos
+
+mapa_dptos <- read_sf ("data/departamentos_arg.geojson")
+st_crs(mapa_dptos)
 mapa_dptos_mercator <- st_transform(mapa_dptos, 3857)
 
-mapa1 <- ggplot(mapa_dptos_mercator)+
-  geom_sf ()
+mapa_dptos_mercator <- mapa_dptos_mercator %>% 
+  filter(provincia != "Ciudad Autónoma de Buenos Aires")
 
-mapa1
-```
+mapa_con_caba <- rbind(mapa_dptos_mercator, caba)
 
-Observamos que el mapa tiene 18 filas más que la base de salarios. 
-Ello se debe a que CABA está 15 veces en el mapa (1 por comuna) y está solo 1 vez en la base de salarios. 
-Además, debe haber al menos 4 departamentos que estén en el mapa y no en la base de salarios.
+mapa_con_caba <- mapa_con_caba %>% 
+  rename(codprov_censo = codpcia)
 
-#para poder unificar los archivos, transformamos la variable de departamento del mapa en numérica.
+rm(caba, mapa_dptos, mapa_dptos_mercator)
 
-#Achicamos la base para tener menos columnas
+#ggplot (mapa_con_caba)+
+ # geom_sf ()
 
-#Unificamos ambos archivos.
-
-#Decidimos dejar a Caba como valor perdido. Podríamos haber puesto que todas las comunas tengan el valor de toda la capital.
-
-#Sin embargo, esa decisión nos hubiera distorcionado la medida de posición de los que vamos a utilizar para responder la pregunta y graficar al cuarto cuartil de departamento con mayores salarios.
-
-#La siguiente función nos permite ver cuántos departamentos/comunas no tienen valores:
-
-```{r echo=TRUE, eval=TRUE}
-class(base_dptos_total$codigo_departamento_indec)
-class (mapa_dptos_mercator$codigo_departamento_indec)
-
-mapa_dptos_mercator <- mapa_dptos_mercator %>%
+####Segunda etapa:
+mapa_dptos_mercator <- mapa_con_caba %>%
   mutate(codigo_departamento_indec = as.numeric(codigo_departamento_indec))
 
-class (mapa_dptos_mercator$codigo_departamento_indec)
-
+#Achicamos la base para tener menos columnas, decidimos trabajar sólo con los datos de marzo 2023
 base_dptos_3_23<- base_dptos_total %>%
   select(codigo_departamento_indec, m202303, provincia, departamento)
 
+#Unificamos ambos archivos.
 base_unificada <- mapa_dptos_mercator %>%
   left_join(base_dptos_3_23, by = "codigo_departamento_indec")
 
-n_miss (base_unificada$m202303)
-```
-
-#Observamos que son 23 (los 15 de CABA y 8 más). Sin embargo deberían ser 4 más y no 8 (teniendo en cuenta la cantidad de casos de cada base). 
-
-#Realizamos una base unificada al revés, parándonos de la base de salarios. 
-
-#Vemos que son 2 departamentos que en la base original de salarios no tienen datos para el 3/23.
-
-#Ahora veamos si hay departamentos que están en la base de salarios que no están en el mapa: 
-
-```{r echo=TRUE, eval=TRUE}
-base_unificada2 <- base_dptos_total %>%
-  left_join(mapa_dptos_mercator, by = "codigo_departamento_indec")
-# Allí vemos en principio cuantos valores perdidos tiene la variable de ingresos en su base original. 
-n_miss (base_unificada2$m202303)
-n_miss (base_unificada2$departamen)
-```
-
-
-#Observamos que son 3. 1 de CABA y otros 2 departamentos que están en tierra del fuego. 
-# a partir de ellos nos damos cuenta que falta los dos departamentos de las provincia Tierra del Fuego en el Mapa. 
-# Entonces, originalmente había 18 valores de diferencia entre ambas bases (523 y 505). Sin embargo, hay 23 NA, los 5 extras se debe a:
-#1 valor extra por CABA, 2 depatamentos que no tienen datos en el último mes de ingreso, los dos departamentos de tierra del fuego que no están en el mapa. 
-
-
-#Luego de realizar el chequeo armamos un primer mapa graficando todos los deparmtam
-
-```{r echo=TRUE, eval=TRUE}
-
-ggplot(base_unificada)+
-  geom_sf(aes(fill=m202303))+
-  scale_fill_viridis_c()+
-  labs (title = "Departamentos según monto promedio de salarios registrados",
-        subtitle = "Argentina, marzo 2023",
-        fill = "Monto promedio del salario registrados") +
-  theme_void()
-```
-
-#Sin embargo, la consigna solicitaba identificar los departmantes con mayores salarios. Para ello solicitamos un summar:
-
-summary(base_unificada$m202303)
-
-A partir de dicha información, decidimos solamente graficar los departamentos del 4to cuartil de salarios más altos.
-
-```{r echo=TRUE, eval=TRUE}
-summary(base_unificada$m202303)
-
-base_unificada <- base_unificada%>%
-  select(m202303,provincia.x)%>%
-  mutate(cuartil4 = case_when (m202303 >= 263883 ~ "Si",
-                               m202303 < 263883 ~ "No", 
-                                is.na(m202303) ~ "Sin datos"))
-
-ggplot(base_unificada)+
-  geom_sf(aes(fill= cuartil4))+
-  scale_fill_viridis_d()+
-  labs (title = "Departamentos del país con salarios promedios más elevados** (cuarto cuartil)",
-        subtitle = "Argentina, marzo 2023.",
-        fill= "Departamentos del cuarto cuartil de salarios",
-        caption= "Elaboración propia en base a datos del Ministerio de desarrollo productivo")+
-  theme_void()
-```
-
-
-#ALTERNATIVA que que estima aumaticamente el 4to cuartil
-
-
-```{recho=TRUE, eval=TRUE}
-base_unificada <- base_unificada%>%
-  select(m202303)%>%
+base_unificada <- base_unificada %>%
   mutate(cuartil4 = case_when(is.na(m202303) ~ "Sin datos",
-                              m202303 >= quantile(m202303, probs = 0.75, na.rm = TRUE) ~ "Si", TRUE ~ "No"))
+                              m202303 >= quantile(m202303, probs = 0.75, na.rm = TRUE) ~ "Si",
+                              TRUE ~ "No")) %>%
+  select(m202303, cuartil4, codprov_censo)
 
-ggplot(base_unificada)+
+mapa <- ggplot(base_unificada)+
   geom_sf(aes(fill= cuartil4))+
   scale_fill_viridis_d()+
   labs (title = "Departamentos del país con salarios promedios más elevados** (cuarto cuartil)",
@@ -162,30 +94,16 @@ ggplot(base_unificada)+
         fill= "Departamentos del cuarto cuartil de salarios",
         caption= "Elaboración propia en base a datos del Ministerio de desarrollo productivo")+
   theme_void()
-```
 
+polArViz::inset_caba(mapa)
 
-
-Agrego interactividad. 
-
-```{r echo=TRUE, eval=TRUE, warning=FALSE}
-p <- ggplot(base_unificada)+
-  geom_sf(aes(fill = cuartil4, text = paste("Provincia:", provincia.x)))+
-  scale_fill_viridis_d()+
-  labs (title = "Departamentos del país con salarios promedios más elevados** (cuarto cuartil)",
-        subtitle = "Argentina, marzo 2023.",
-        fill= "Departamentos del cuarto cuartil de salarios",
-        caption= "Elaboración propia en base a datos del Ministerio de desarrollo productivo")+
-  theme_void()
-
-ggplotly(p) 
 ```
 
 **Los 5 sectores de actividad con salarios más bajos, expresados en un gráfico de
 barras.**
 
 
-```{r}
+```{r echo=TRUE, eval=TRUE}
 
 grafico_T2 <- left_join(x = w_mean_dpto_priv_clae2, y = diccionario)%>%
   mutate(anio = year(fecha), mes = month(fecha))%>%
@@ -211,11 +129,11 @@ grafico_T2
 
 ```
 
-```{r}
+```{r echo=TRUE, eval=TRUE}
 color_sectores <- c("A" = "darkorange", "B" = "red", "C" = "blue",
                        "D" = "yellow")
 
-data_g_t33443 <- left_join(x = w_mean_dpto_priv_clae2, y = diccionario) %>%
+data_g_T3 <- left_join(x = w_mean_dpto_priv_clae2, y = diccionario) %>%
   filter(letra == "A" |letra == "B" |letra =="C" |letra =="D")%>%
   mutate(anio = year(fecha), mes = month(fecha))%>%
   filter(mes == 12)%>%
@@ -226,13 +144,14 @@ data_g_t33443 <- left_join(x = w_mean_dpto_priv_clae2, y = diccionario) %>%
   mutate(ranking = row_number())%>%
   filter(ranking <= 5)
 
-g_T3 <- ggplot(data_g_t33443) +
+g_T3 <- ggplot(data_g_T3) +
   geom_col(aes(x = media_w_mean, y = factor(ranking), fill = letra)) +
   geom_text(aes(x = media_w_mean, y = factor(ranking), label = letra)) +
   scale_fill_manual(values = color_sectores) +
   theme_minimal() +
   transition_time(anio) +
-  labs(title = "Diciembre: {frame_time}", y = NULL, x = "salario promedio")
+  labs(title = "Diciembre: {as.integer(frame_time)}", y = NULL, x = "Salario promedio")
+
 
 g_T3 
 ```
