@@ -1,27 +1,28 @@
 ---
 title: "Trabajo M1 Y M2"
-author: 
+author: Matías Ballesteros, Román Sugo
   - 
 output: 
   html_document:
     toc: TRUE
     toc_float: TRUE
     theme: journal
+    code_folding: hide
+
 ---
 
-```{r setup, message = FALSE, echo=FALSE}
+```{r setup, message = FALSE, echo=FALSE, collapse=TRUE}
 knitr::opts_chunk$set(echo = TRUE,include = TRUE, message = FALSE)
 ```
 
-**Carga de librerías a usar**   
+**Librerías a usar**   
 ```{r, include = TRUE}
 pacman::p_load(tidyverse, ggplot2, forcats, ggtext, readxl, naniar, sf, plotly, gganimate, gifski, polArViz, geoAr)
 options(scipen = 999)
 ```
 
-**Carga de bases de datos a usar**
- 
-```{r echo=TRUE, eval=TRUE}
+**Bases de datos a usar**
+```{r echo=TRUE, eval=TRUE, collapse=TRUE}
 base_dptos_total <- read_excel("data/Salario-promedio-por-departamento.xlsx")
 mapa_dptos <- read_sf ("data/departamentos_arg.geojson")
 w_mean_dpto_priv_clae2 <- read.csv("data/w_mean_depto_total_clae2.csv")
@@ -29,9 +30,18 @@ diccionario <- read.csv("data/diccionario_clae2.csv")
 provincias <- "data/provincia.json"
 ```
 
- Tarea 1: Los departamentos con mayores salarios, expresados en un mapa coroplético
+## Tarea 1: Los departamentos con mayores salarios, expresados en un mapa coroplético 
  
-```{r echo=TRUE, eval=TRUE}
+ Para realizar este ejercicio, siguiendo la consigna, utilizamos la base de datos del Ministerio de Desarrollo productivo. Trabajamos con los datos de todos los asalariados del sector formal de marzo de 2023 y el mapa que fue suministrado.
+
+En el mapa no está la provincia de Tierra del Fuego, por lo que excluimos a los dos departamentos de esa provincia del análisis. Además, la Ciudad Autónoma de Buenos Aires (CABA) está dividida por sus 15 comunas en el mapa, mientras que en los datos del Ministerio está unida. Para poder incorporarla se agregó al mapa suministrado las información geoespacial de CABA obtenida del Instituo Geográfico Nacional (https://www.ign.gob.ar/).
+
+Decidimos considerar que los departamentos con mayores salarios promedios a aquellos que son parte del cuarto cuartil (mayores a $263.883 en marzo de 2023).  En el mapa se observa que esos departamentos se encuentran principalmente en la Patagonia y la región pampeana (principalmente en la provincia de Buenos Aires), mientras que no hay ningún departamento en la región del NEA y muy pocos en el NOA. 
+
+Por último se utilizaron los paquetes "polArViz" y "geoAr" que permiten realizar un zoom a CABA para una mejor visualización. A continuación el mapa con los resultados. 
+
+ 
+```{r echo=TRUE, eval=TRUE, collapse = TRUE, fig.width=10, fig.height=5}
 caba <- st_read(provincias) %>% 
   filter(fna == "Ciudad Autónoma de Buenos Aires") %>% 
   select(geometry) %>% 
@@ -57,7 +67,7 @@ mapa_dptos_mercator <- st_transform(mapa_dptos, 3857)
 
 mapa_dptos_mercator <- mapa_dptos_mercator %>% 
   filter(provincia != "Ciudad Autónoma de Buenos Aires")
-
+#Unificamos 
 mapa_con_caba <- rbind(mapa_dptos_mercator, caba)
 
 mapa_con_caba <- mapa_con_caba %>% 
@@ -65,14 +75,11 @@ mapa_con_caba <- mapa_con_caba %>%
 
 rm(caba, mapa_dptos, mapa_dptos_mercator)
 
-#ggplot (mapa_con_caba)+
- # geom_sf ()
-
 ####Segunda etapa:
 mapa_dptos_mercator <- mapa_con_caba %>%
   mutate(codigo_departamento_indec = as.numeric(codigo_departamento_indec))
 
-#Achicamos la base para tener menos columnas, decidimos trabajar sólo con los datos de marzo 2023
+#Reducimos la base para tener menos columnas, decidimos trabajar sólo con los datos de marzo 2023
 base_dptos_3_23<- base_dptos_total %>%
   select(codigo_departamento_indec, m202303, provincia, departamento)
 
@@ -90,21 +97,26 @@ mapa <- ggplot(base_unificada)+
   geom_sf(aes(fill= cuartil4))+
   scale_fill_viridis_d()+
   labs (title = "Departamentos del país con salarios promedios más elevados** (cuarto cuartil)",
-        subtitle = "Argentina, marzo 2023.",
+        subtitle = "Argentina - Marzo 2023.",
         fill= "Departamentos del cuarto cuartil de salarios",
         caption= "Elaboración propia en base a datos del Ministerio de desarrollo productivo")+
-  theme_void()
+  theme_void()+
+  theme(plot.title = element_text(face = "bold", size = 12))
 
 polArViz::inset_caba(mapa)
 
 ```
 
-**Los 5 sectores de actividad con salarios más bajos, expresados en un gráfico de
-barras.**
+## Los 5 sectores de actividad con salarios más bajos, expresados en un gráfico de barras
+
+Para calcular los sectores de actividad con salarios más bajos, no encontramos datos que contengan la información para el total país. Los datos disponibles se encuentran para cada uno de los departamentos del país por sector. Por este motivo, para responder la pregunta realizamos para cada sector un promedio del promedio de los salarios por departamento.
+
+Esta información no es precisa, ya que se le asigna el mismo peso a departamentos en los que viven una gran cantidad de personas y por lo tanto también asalariados (por ejemplo, en la Matanza vivían en 2022 1.837.774) que a departamentos en los que viven muy pocas personas (por ejemplo en Antofagasta, Catamarca, vivían en 2022 2.008 personas). Además se excluyeron aquellos valores etiquetados como "-99" en el entendido que son missing que tiene la base de datos. 
+
+Habiendo realizado esa aclaración, observamos que los cinco sectores de actividad con salarios más bajos en abril de 2023 son 1.servicios de alojamiento y servicios de comida, 2.servicio inmobiliario, 3. enseñanza, 4. servicios artísticos, culturales, deportivos y de esparcimiento, y 5. actividades administrativas y servicios de apoyo.   
 
 
-```{r echo=TRUE, eval=TRUE}
-
+```{r echo=TRUE, eval=TRUE, collapse = TRUE, fig.width=10, fig.height=5}
 grafico_T2 <- left_join(x = w_mean_dpto_priv_clae2, y = diccionario)%>%
   mutate(anio = year(fecha), mes = month(fecha))%>%
   filter(anio == 2023 & mes == 4 & w_mean >= 0)%>%
@@ -118,41 +130,55 @@ grafico_T2 <- left_join(x = w_mean_dpto_priv_clae2, y = diccionario)%>%
   scale_fill_viridis_d()+
   guides(fill= "none") +
   labs(title = "5 sectores de actividad con salarios más bajos",
-       subtitle = "(Argentina, abril 2023)",
+       subtitle = "(Argentina - Abril 2023)",
        x = "Ingreso medio",
        y = NULL,
        caption = "Fuente: Ministerio de Desarrollo Productivo")+
-  theme(plot.title = element_markdown(face = 'bold'),
+  theme(plot.title = element_markdown(face = 'bold', size = 12),
+        plot.subtitle = element_text(size = 10, hjust = 0.5),
   axis.title.x = element_markdown())
 
 grafico_T2
 
 ```
+  
+    
+    
+  
+## 3-Elija 4 sectores de actividad y visualice la evolución de los salarios a lo largo de los años disponibles    
 
-```{r echo=TRUE, eval=TRUE}
-color_sectores <- c("A" = "darkorange", "B" = "red", "C" = "blue",
-                       "D" = "yellow")
+Para visualizar la información, decidimos realizar un gráfico de lineas para el mes de diciembre de cada año (entre 2014 y 2022).Se seleccionaron los sectores "R" (Servicios  artísticos, culturales, deportivos  y de esparcimiento), "M" (Servicios profesionales, científicos y técnicos), "J" (Información y comunicaciones), "D" (Suministro de electricidad, gas, vapor y aire acondicionado). El motivo para la selección fue arbitrario para que la visualización se observa de forma más clara la disparidad del aumento promedio de los salarios (en valores nominales). 
 
+Para el año 2014 el sector R registraba un salario promedio en el entorno de 8752 pesos aumentando hasta ubicarse en diciembre de 2022 en el entorno de 144876 pesos. El sector M inicia la serie con un salario promedio de 10846 y finaliza con 274311. En tercer lugar se encontraba el sector J que inicia con un valor superior al del sector M (15526) pero luego de 8 años el sector tiene valores salariales en promedio iguales a los del dicho sector. Finalmente el sector D tenía en 2014 un salario promedio de 30860 pesos y finalizó el 2022 con 565679 pesos. 
+
+```{r echo=TRUE, eval=TRUE, collapse = TRUE, fig.width=10, fig.height=5}
+
+color_sectores <- c("R" = "#441454","M" = "#3c948c","J" = "#3c548b","D" = "#fbeb4c")
+                    
 data_g_T3 <- left_join(x = w_mean_dpto_priv_clae2, y = diccionario) %>%
-  filter(letra == "A" |letra == "B" |letra =="C" |letra =="D")%>%
+  filter(letra == "R" |letra == "M" |letra =="J" |letra =="D" & w_mean >= 0)%>%
   mutate(anio = year(fecha), mes = month(fecha))%>%
   filter(mes == 12)%>%
-  group_by(letra, anio) %>%
-  summarize(media_w_mean = mean(w_mean), .groups = "drop")%>%
-  arrange(anio, desc(media_w_mean))%>%
-  group_by(anio)%>%
-  mutate(ranking = row_number())%>%
-  filter(ranking <= 5)
+  group_by(letra, letra_desc, anio) %>%
+  summarize(promedio_salario = mean(w_mean), .groups = "drop")%>%
+  arrange(anio, desc(promedio_salario))
 
-g_T3 <- ggplot(data_g_T3) +
-  geom_col(aes(x = media_w_mean, y = factor(ranking), fill = letra)) +
-  geom_text(aes(x = media_w_mean, y = factor(ranking), label = letra)) +
-  scale_fill_manual(values = color_sectores) +
+grafico_T3 <- ggplot(data_g_T3, aes(x = anio, y = promedio_salario, group = letra, color = letra)) +
+  geom_line() +
+  geom_point() +
+  geom_text(aes(label = as.character(floor(promedio_salario))), vjust = -0.5, hjust = 0.5) +
   theme_minimal() +
-  transition_time(anio) +
-  labs(title = "Diciembre: {as.integer(frame_time)}", y = NULL, x = "Salario promedio")
+  transition_reveal(anio) +
+  theme(legend.position = "top",
+        plot.title = element_text(face = "bold", size = 12),
+        plot.subtitle = element_text(size = 10, hjust = 0.5)) +
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 5)) +
+  xlab("Año") +
+  ylab("Salario promedio") +
+  labs(title = "Evolución del salario promedio por sector de actividad",
+       subtitle = "Argentina - Diciembre 2014-2022",
+       caption = "Fuente: Ministerio de Desarrollo Productivo")
 
-
-g_T3 
+grafico_T3
 ```
 
